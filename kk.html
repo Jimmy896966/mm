@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>掃雷遊戲</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        #game-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        
+        #game-container:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+        }
+        
+        #board {
+            display: grid;
+            grid-gap: 1px;
+            background-color: #bdc3c7;
+            border: 2px solid #7f8c8d;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #ecf0f1;
+            border: 1px solid #bdc3c7;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .cell:hover {
+            background-color: #d5dbdb;
+        }
+        
+        .cell.revealed {
+            background-color: #fff;
+        }
+        
+        .cell.mine {
+            background-color: #e74c3c;
+            animation: explode 0.5s ease-out;
+        }
+        
+        @keyframes explode {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        select, button {
+            padding: 8px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        
+        select:hover, button:hover {
+            background-color: #2980b9;
+        }
+        
+        #timer {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+            background-color: #ecf0f1;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        
+        /* 數字顏色 */
+        .cell[data-neighbors="1"] { color: #3498db; }
+        .cell[data-neighbors="2"] { color: #2ecc71; }
+        .cell[data-neighbors="3"] { color: #e74c3c; }
+        .cell[data-neighbors="4"] { color: #9b59b6; }
+        .cell[data-neighbors="5"] { color: #f1c40f; }
+        .cell[data-neighbors="6"] { color: #1abc9c; }
+        .cell[data-neighbors="7"] { color: #34495e; }
+        .cell[data-neighbors="8"] { color: #7f8c8d; }
+    </style>
+</head>
+<body>
+    <h1>掃雷遊戲</h1>
+    <div id="game-container">
+        <div id="board"></div>
+        <div id="controls">
+            <select id="difficulty">
+                <option value="easy">簡單</option>
+                <option value="medium">中等</option>
+                <option value="hard">困難</option>
+            </select>
+            <button id="new-game">新遊戲</button>
+            <div id="timer">時間: 0s</div>
+        </div>
+    </div>
+
+    <script>
+        const board = document.getElementById('board');
+        const difficultySelect = document.getElementById('difficulty');
+        const newGameButton = document.getElementById('new-game');
+        const timerDisplay = document.getElementById('timer');
+
+        let gameBoard = [];
+        let gameOver = false;
+        let timer = 0;
+        let timerInterval;
+
+        const difficulties = {
+            easy: { rows: 9, cols: 9, mines: 10 },
+            medium: { rows: 16, cols: 16, mines: 40 },
+            hard: { rows: 16, cols: 30, mines: 99 }
+        };
+
+        function createBoard() {
+            const difficulty = difficulties[difficultySelect.value];
+            gameBoard = [];
+            board.innerHTML = '';
+            board.style.gridTemplateColumns = `repeat(${difficulty.cols}, 30px)`;
+
+            for (let i = 0; i < difficulty.rows; i++) {
+                gameBoard[i] = [];
+                for (let j = 0; j < difficulty.cols; j++) {
+                    gameBoard[i][j] = { isMine: false, revealed: false, neighbors: 0 };
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+                    cell.addEventListener('click', () => revealCell(i, j));
+                    cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        flagCell(i, j);
+                    });
+                    board.appendChild(cell);
+                }
+            }
+
+            // Place mines
+            let minesPlaced = 0;
+            while (minesPlaced < difficulty.mines) {
+                const row = Math.floor(Math.random() * difficulty.rows);
+                const col = Math.floor(Math.random() * difficulty.cols);
+                if (!gameBoard[row][col].isMine) {
+                    gameBoard[row][col].isMine = true;
+                    minesPlaced++;
+                }
+            }
+
+            // Calculate neighbors
+            for (let i = 0; i < difficulty.rows; i++) {
+                for (let j = 0; j < difficulty.cols; j++) {
+                    if (!gameBoard[i][j].isMine) {
+                        gameBoard[i][j].neighbors = countNeighbors(i, j);
+                    }
+                }
+            }
+        }
+
+        function countNeighbors(row, col) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    if (i === 0 && j === 0) continue;
+                    const newRow = row + i;
+                    const newCol = col + j;
+                    if (newRow >= 0 && newRow < gameBoard.length && newCol >= 0 && newCol < gameBoard[0].length) {
+                        if (gameBoard[newRow][newCol].isMine) count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        function revealCell(row, col) {
+            if (gameOver || gameBoard[row][col].revealed) return;
+
+            const cell = board.children[row * gameBoard[0].length + col];
+            cell.classList.add('revealed');
+            gameBoard[row][col].revealed = true;
+
+            if (gameBoard[row][col].isMine) {
+                gameOver = true;
+                cell.classList.add('mine');
+                cell.textContent = '💣';
+                alert('遊戲結束！');
+                clearInterval(timerInterval);
+            } else {
+                const neighborCount = gameBoard[row][col].neighbors;
+                if (neighborCount > 0) {
+                    cell.textContent = neighborCount;
+                    cell.setAttribute('data-neighbors', neighborCount);
+                } else {
+                    // Reveal neighbors for empty cells
+                    for (let i = -1; i <= 1; i++) {
+                        for (let j = -1; j <= 1; j++) {
+                            const newRow = row + i;
+                            const newCol = col + j;
+                            if (newRow >= 0 && newRow < gameBoard.length && newCol >= 0 && newCol < gameBoard[0].length) {
+                                revealCell(newRow, newCol);
+                            }
+                        }
+                    }
+                }
+            }
+
+            checkWin();
+        }
+
+        function flagCell(row, col) {
+            if (gameOver || gameBoard[row][col].revealed) return;
+
+            const cell = board.children[row * gameBoard[0].length + col];
+            if (cell.textContent === '🚩') {
+                cell.textContent = '';
+            } else {
+                cell.textContent = '🚩';
+            }
+        }
+
+        function checkWin() {
+            const difficulty = difficulties[difficultySelect.value];
+            const totalCells = difficulty.rows * difficulty.cols;
+            const revealedCells = gameBoard.flat().filter(cell => cell.revealed).length;
+            if (revealedCells === totalCells - difficulty.mines) {
+                gameOver = true;
+                alert('恭喜你贏了！');
+                clearInterval(timerInterval);
+            }
+        }
+
+        function startNewGame() {
+            gameOver = false;
+            timer = 0;
+            timerDisplay.textContent = '時間: 0s';
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timer++;
+                timerDisplay.textContent = `時間: ${timer}s`;
+            }, 1000);
+            createBoard();
+        }
+
+        newGameButton.addEventListener('click', startNewGame);
+        difficultySelect.addEventListener('change', startNewGame);
+
+        startNewGame();
+    </script>
+</body>
+</html>
